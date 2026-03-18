@@ -1,6 +1,8 @@
-name: The name of your action here
-description: Provide a description here
-author: Your name or organization here
+name: select-runs-on-action
+description:
+  takes inputs for repository and mapping file to dynamically select the runs-on
+  runner
+author: William Sanders
 
 # Add your action's branding here. This will appear on the GitHub Marketplace.
 branding:
@@ -9,15 +11,21 @@ branding:
 
 # Define your inputs here.
 inputs:
-  milliseconds:
-    description: Your input description here
+  repository:
+    description: GitHub repository name
     required: true
-    default: '1000'
+  default-runs-on:
+    description: Default runs_on value from veracode workflow inputs
+    required: true
+  runs-on-mapping-yaml:
+    description: YAML mapping file for runs-on configuration
+    required: true
+    default: 'runs-on-mapping.yaml'
 
 # Define your outputs here.
 outputs:
-  time:
-    description: Your output description here
+  runs-on:
+    description: runs_on runner selection from YAML mapping file
 
 runs:
   using: node24
