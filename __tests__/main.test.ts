@@ -81,7 +81,9 @@ describe('main.ts', () => {
     await run()
 
     expect(core.setFailed).toHaveBeenCalledWith(
-      expect.stringContaining("Failed to read mapping file: __fixtures__/non-existent.yaml")
+      expect.stringContaining(
+        'Failed to read mapping file: __fixtures__/non-existent.yaml'
+      )
     )
   })
 
@@ -92,7 +94,7 @@ describe('main.ts', () => {
     await run()
 
     expect(core.setFailed).toHaveBeenCalledWith(
-      expect.stringContaining("YAMLException")
+      expect.stringContaining('YAMLException')
     )
   })
 
@@ -113,7 +115,9 @@ describe('main.ts', () => {
 
     expect(core.setFailed).not.toHaveBeenCalled()
     expect(core.info).toHaveBeenCalledWith(
-      expect.stringContaining('Found repository "verademo-java" in runs_on group: ubuntu-latest')
+      expect.stringContaining(
+        'Found repository "verademo-java" in runs_on group: ubuntu-latest'
+      )
     )
     expect(core.setOutput).toHaveBeenCalledWith(
       expect.stringContaining('runs_on'),

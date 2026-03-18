@@ -54,7 +54,8 @@ export async function run(): Promise<void> {
   } catch (error) {
     // Fail the workflow run if an error occurs
     core.debug(JSON.stringify(error, null, 2))
-    const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
+    const message =
+      error instanceof Error ? `${error.name}: ${error.message}` : String(error)
     core.setFailed(message)
   }
 }
