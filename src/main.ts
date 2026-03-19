@@ -112,7 +112,7 @@ export async function run(): Promise<void> {
     core.info(`Using runs_on value: ${runs_on}`)
 
     // Set outputs for other workflow steps to use
-    core.setOutput('runs_on', runs_on)
+    core.setOutput('runs-on', `['${runs_on}']`)
   } catch (error) {
     // Fail the workflow run if an error occurs
     core.debug(JSON.stringify(error, null, 2))

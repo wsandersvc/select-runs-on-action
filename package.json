@@ -1,7 +1,7 @@
 {
   "name": "select-runs-on-action",
   "description": "select-runs-on-action",
-  "version": "1.1.1",
+  "version": "1.1.5",
   "author": "",
   "type": "module",
   "private": true,
