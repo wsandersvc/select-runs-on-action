@@ -7,7 +7,6 @@
 ![Coverage](./badges/coverage.svg)
 
 ## Roadmap
-- Specify configuration repository.
 
 ## Initial Setup
 

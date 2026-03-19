@@ -20,6 +20,10 @@ inputs:
   repository:
     description: GitHub repository name
     required: true
+  config-repository:
+    description: GitHub repository name
+    required: false
+    default: veracode
   ref:
     description:
       Branch, tag, or commit SHA to fetch from (optional, defaults to default

@@ -52,6 +52,7 @@ describe('main.ts', () => {
     owner: 'test-owner',
     // ref: 'main',
     repository: TEST_REPOS.JAVA,
+    'config-repository': CONFIG_REPOSITORY,
     'default-runs-on': TEST_RUNNERS.UBUNTU,
     'runs-on-mapping-yaml': 'runs-on-mapping.yaml'
   }
@@ -96,12 +97,12 @@ describe('main.ts', () => {
     expect(mockGetOctokit).toHaveBeenCalledWith('test-token')
     expect(mockOctokit.rest.repos.getContent).toHaveBeenCalledWith({
       owner: defaultInput['owner'],
-      repo: CONFIG_REPOSITORY,
+      repo: defaultInput['config-repository'],
       path: defaultInput['runs-on-mapping-yaml']
     })
 
     expect(core.info).toHaveBeenCalledWith(
-      `Fetching file: ${defaultInput['runs-on-mapping-yaml']} from ${defaultInput['owner']}/${CONFIG_REPOSITORY}`
+      `Fetching file: ${defaultInput['runs-on-mapping-yaml']} from ${defaultInput['owner']}/${defaultInput['config-repository']}`
     )
     expect(core.info).toHaveBeenCalledWith(
       `Successfully fetched file (12 bytes)`
@@ -117,13 +118,13 @@ describe('main.ts', () => {
     expect(mockGetOctokit).toHaveBeenCalledWith('test-token')
     expect(mockOctokit.rest.repos.getContent).toHaveBeenCalledWith({
       owner: defaultInput['owner'],
-      repo: CONFIG_REPOSITORY,
+      repo: defaultInput['config-repository'],
       ref: ref,
       path: defaultInput['runs-on-mapping-yaml']
     })
 
     expect(core.info).toHaveBeenCalledWith(
-      `Fetching file: ${defaultInput['runs-on-mapping-yaml']} from ${defaultInput['owner']}/${CONFIG_REPOSITORY} (ref: ${ref})`
+      `Fetching file: ${defaultInput['runs-on-mapping-yaml']} from ${defaultInput['owner']}/${defaultInput['config-repository']} (ref: ${ref})`
     )
     expect(core.info).toHaveBeenCalledWith(
       `Successfully fetched file (12 bytes)`
@@ -150,10 +151,12 @@ describe('main.ts', () => {
     )
     expect(core.setFailed).toHaveBeenCalledWith(
       expect.stringContaining(
-        `Failed to fetch mapping file from ${defaultInput['owner']}/${CONFIG_REPOSITORY}/${mapping_file}`
+        `Failed to fetch mapping file from ${defaultInput['owner']}/${defaultInput['config-repository']}/${mapping_file}`
       )
     )
   })
+
+  // check if config-repository is empty
 })
 
 // it('Validates action inputs', async () => {

@@ -64700,17 +64700,20 @@ async function run() {
         const github_token = getInput('github-token', { required: true });
         const owner = getInput('owner', { required: true });
         const repository = getInput('repository', { required: true });
+        const config_repository = getInput('config-repository', {
+            required: false
+        });
         const ref = getInput('ref');
         const default_runs_on = getInput('default-runs-on', { required: true });
         info(`Loading runs-on-mapping-yaml from ${mapping_path}`);
         const file_content = await fetchFileFromRepo({
             owner: owner,
-            repository: 'veracode',
+            repository: config_repository,
             path: mapping_path,
             ref,
             token: github_token
         }).catch((error$1) => {
-            const message = `Failed to fetch mapping file from ${owner}/veracode/${mapping_path}`;
+            const message = `Failed to fetch mapping file from ${owner}/${config_repository}/${mapping_path}`;
             error(message);
             throw new Error(message, { cause: error$1 });
         });

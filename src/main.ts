@@ -65,18 +65,21 @@ export async function run(): Promise<void> {
     const github_token = core.getInput('github-token', { required: true })
     const owner = core.getInput('owner', { required: true })
     const repository = core.getInput('repository', { required: true })
+    const config_repository = core.getInput('config-repository', {
+      required: false
+    })
     const ref = core.getInput('ref')
     const default_runs_on = core.getInput('default-runs-on', { required: true })
 
     core.info(`Loading runs-on-mapping-yaml from ${mapping_path}`)
     const file_content = await fetchFileFromRepo({
       owner: owner,
-      repository: 'veracode',
+      repository: config_repository,
       path: mapping_path,
       ref,
       token: github_token
     }).catch((error) => {
-      const message = `Failed to fetch mapping file from ${owner}/veracode/${mapping_path}`
+      const message = `Failed to fetch mapping file from ${owner}/${config_repository}/${mapping_path}`
       core.error(message)
       throw new Error(message, { cause: error })
     })

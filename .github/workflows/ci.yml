@@ -59,7 +59,8 @@ jobs:
         with:
           github-token: ${{ github.token }}
           owner: wsandersvc
-          repository: select-runs-on-action
+          config-repository: select-runs-on-action
+          repository: verademo-java
           default-runs-on: "[ 'ubuntu-latest' ]"
           runs-on-mapping-yaml: runs-on-mapping.yaml
 
