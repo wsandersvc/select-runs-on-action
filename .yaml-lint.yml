@@ -12,4 +12,4 @@ rules:
     allow-non-breakable-inline-mappings: true
 ignore:
   - .licenses/
-  - '__fixtures__/*.yaml'
+  - __fixtures__/
