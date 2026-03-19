@@ -64738,7 +64738,7 @@ async function run() {
         }
         info(`Using runs_on value: ${runs_on}`);
         // Set outputs for other workflow steps to use
-        setOutput('runs-on', `'[''${runs_on}'']'`);
+        setOutput('runs-on', `['${runs_on}']`);
     }
     catch (error) {
         // Fail the workflow run if an error occurs
