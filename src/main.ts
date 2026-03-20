@@ -1,8 +1,9 @@
 import * as core from '@actions/core'
 import { getOctokit } from '@actions/github'
 import yaml, { FAILSAFE_SCHEMA } from 'js-yaml'
+import { checkRateLimit } from './rate-limiter.js'
 
-type Octokit = ReturnType<typeof getOctokit>
+export type Octokit = ReturnType<typeof getOctokit>
 
 interface RunsOnMapping {
   [runnerName: string]: string[]
@@ -47,12 +48,18 @@ async function fetchFileFromRepo(
   const { owner, path, ref, repository } = options
 
   try {
-    // Check rate limit
-    const rateLimit = await octokit.rest.rateLimit.get()
-    core.debug(
-      `Rate limit remaining: ${rateLimit.data.rate.remaining}/${rateLimit.data.rate.limit}`
+    // Check rate limit before making API call
+    const rateLimitCheck = await checkRateLimit(
+      octokit,
+      `Fetch ${path} from ${owner}/${repository}`
     )
-    core.debug(`Rate limit reset: ${rateLimit.data.rate.reset}`)
+
+    // If rate limit is critically low, abort operation
+    if (!rateLimitCheck.canProceed) {
+      throw new Error(
+        `Rate limit exhausted: ${rateLimitCheck.warning}. Cannot fetch file.`
+      )
+    }
 
     core.info(
       `Fetching file: ${path} from ${owner}/${repository}${ref ? ` (ref: ${ref})` : ''}`
