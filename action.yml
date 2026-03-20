@@ -11,26 +11,26 @@ branding:
 
 # Define your inputs here.
 inputs:
+  config-repository:
+    description: GitHub repository name
+    required: false
+    default: veracode
+  default-runs-on: # formatted as [ 'ubuntu-latest' ]
+    description: Default runs_on value from veracode workflow inputs
+    required: true
   github-token:
     description: 'GitHub token with repo access to read the configuration file'
     required: true
   owner:
     description: GitHub repository owner
     required: true
-  repository:
-    description: GitHub repository name
-    required: true
-  config-repository:
-    description: GitHub repository name
-    required: false
-    default: veracode
   ref:
     description:
       Branch, tag, or commit SHA to fetch from (optional, defaults to default
       branch)
     required: false
-  default-runs-on: # formatted as [ 'ubuntu-latest' ]
-    description: Default runs_on value from veracode workflow inputs
+  repository:
+    description: GitHub repository name
     required: true
   runs-on-mapping-yaml:
     description: YAML mapping file for runs-on configuration
