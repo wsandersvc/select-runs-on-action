@@ -61,16 +61,25 @@ const TEST_RUNNERS = {
 
 const CONFIG_REPOSITORY = 'veracode'
 
-const VALID_YAML_MAPPING = `ubuntu-latest:
-  - verademo-java
-  - verademo-java-mitigated
-windows-latest:
-  - verademo-dotnet
-  - verademo-netframework
+// v3.0.0 YAML format with top-level sections
+const VALID_YAML_MAPPING = `build-runs-on:
+  ubuntu-latest:
+    - verademo-java
+    - verademo-java-mitigated
+  windows-latest:
+    - verademo-dotnet
+    - verademo-netframework
+default-runs-on:
+  ubuntu-latest:
+    - verademo-java
+    - verademo-java-mitigated
+  windows-latest:
+    - verademo-dotnet
+    - verademo-netframework
 `
-
 describe('main.ts', () => {
   const defaultInput: Record<string, string> = {
+    'build-runs-on': TEST_RUNNERS.UBUNTU,
     'config-repository': CONFIG_REPOSITORY,
     'default-runs-on': TEST_RUNNERS.UBUNTU,
     'github-token': 'test-token',
@@ -136,6 +145,14 @@ describe('main.ts', () => {
       expect(core.info).toHaveBeenCalledWith(
         expect.stringMatching(/Successfully fetched file \(\d+ bytes\)/)
       )
+      expect(core.setOutput).toHaveBeenCalledWith(
+        'build-runs-on',
+        expect.stringContaining('ubuntu-latest')
+      )
+      expect(core.setOutput).toHaveBeenCalledWith(
+        'default-runs-on',
+        expect.stringContaining('ubuntu-latest')
+      )
       expect(core.setFailed).not.toHaveBeenCalled()
     })
 
@@ -194,6 +211,9 @@ describe('main.ts', () => {
     it('should successfully retrieve all required inputs', async () => {
       await run()
 
+      expect(core.getInput).toHaveBeenCalledWith('build-runs-on', {
+        required: true
+      })
       expect(core.getInput).toHaveBeenCalledWith('default-runs-on', {
         required: true
       })
@@ -255,7 +275,11 @@ describe('main.ts', () => {
 
       expect(core.setFailed).not.toHaveBeenCalled()
       expect(core.setOutput).toHaveBeenCalledWith(
-        'runs-on',
+        'default-runs-on',
+        expect.stringContaining('ubuntu-latest')
+      )
+      expect(core.setOutput).toHaveBeenCalledWith(
+        'build-runs-on',
         expect.stringContaining('ubuntu-latest')
       )
     })
@@ -274,7 +298,7 @@ describe('main.ts', () => {
       await run()
 
       expect(core.setFailed).toHaveBeenCalledWith(
-        expect.stringContaining('Invalid default-runs-on-format')
+        expect.stringContaining('Invalid runs-on-format')
       )
     })
 
@@ -332,6 +356,104 @@ describe('main.ts', () => {
 
     it('should fail with object in default-runs-on', async () => {
       setupInput({ 'default-runs-on': '[ { "runner": "ubuntu" } ]' })
+
+      await run()
+
+      expect(core.setFailed).toHaveBeenCalledWith(
+        expect.stringContaining('Array must contain a string')
+      )
+    })
+  })
+
+  describe('Build Runs-On Parsing', () => {
+    it('should parse valid build-runs-on with single quotes', async () => {
+      setupInput({ 'build-runs-on': "[ 'ubuntu-latest' ]" })
+
+      await run()
+
+      expect(core.setFailed).not.toHaveBeenCalled()
+      expect(core.setOutput).toHaveBeenCalledWith(
+        'build-runs-on',
+        expect.stringContaining('ubuntu-latest')
+      )
+      expect(core.setOutput).toHaveBeenCalledWith(
+        'build-runs-on',
+        expect.stringContaining('ubuntu-latest')
+      )
+    })
+
+    it('should parse valid build-runs-on with double quotes', async () => {
+      setupInput({ 'build-runs-on': '[ "windows-latest" ]' })
+
+      await run()
+
+      expect(core.setFailed).not.toHaveBeenCalled()
+    })
+
+    it('should fail with invalid JSON format in build-runs-on', async () => {
+      setupInput({ 'build-runs-on': 'not-valid-json' })
+
+      await run()
+
+      expect(core.setFailed).toHaveBeenCalledWith(
+        expect.stringContaining('Invalid runs-on-format')
+      )
+    })
+
+    it('should fail with empty array in build-runs-on', async () => {
+      setupInput({ 'build-runs-on': '[]' })
+
+      await run()
+
+      expect(core.setFailed).toHaveBeenCalledWith(
+        expect.stringContaining('Must be a non-empty array with 1 element')
+      )
+    })
+
+    it('should fail with multiple elements in build-runs-on array', async () => {
+      setupInput({
+        'build-runs-on': "[ 'ubuntu-latest', 'windows-latest' ]"
+      })
+
+      await run()
+
+      expect(core.setFailed).toHaveBeenCalledWith(
+        expect.stringContaining('Must be a non-empty array with 1 element')
+      )
+    })
+
+    it('should fail with non-string element in build-runs-on', async () => {
+      setupInput({ 'build-runs-on': '[ 123 ]' })
+
+      await run()
+
+      expect(core.setFailed).toHaveBeenCalledWith(
+        expect.stringContaining('Array must contain a string')
+      )
+    })
+
+    it('should fail with boolean in build-runs-on', async () => {
+      setupInput({ 'build-runs-on': '[ true ]' })
+
+      await run()
+
+      expect(core.setFailed).toHaveBeenCalledWith(
+        expect.stringContaining('Array must contain a string')
+      )
+    })
+
+    it('should fail with null in build-runs-on', async () => {
+      setupInput({ 'build-runs-on': '[ null ]' })
+
+      await run()
+
+      expect(core.setFailed).toHaveBeenCalledWith(
+        expect.stringContaining('Array must contain a string')
+      )
+    })
+
+    it('should fail with object in build-runs-on', async () => {
+      setupInput({ 'build-runs-on': '[ { "runner": "ubuntu" } ]' })
 
       await run()
 
@@ -405,8 +527,7 @@ describe('main.ts', () => {
     })
 
     it('should decode base64 content correctly', async () => {
-      const testContent = `ubuntu-latest:
-  - test-repo`
+      const testContent = VALID_YAML_MAPPING
       mockOctokit.rest.repos.getContent.mockResolvedValue({
         data: {
           content: Buffer.from(testContent).toString('base64'),
@@ -441,12 +562,13 @@ describe('main.ts', () => {
     })
 
     it('should handle YAML with non-array values', async () => {
-      const yamlWithStrings = `ubuntu-latest:
-  - verademo-java
-windows-latest: "not-an-array"
-macos-latest:
-  - verademo-ios`
-
+      const yamlWithStrings = `default-runs-on:
+  ubuntu-latest:
+    - verademo-java
+  windows-latest: "not-an-array"
+build-runs-on:
+  ubuntu-latest:
+    - verademo-java`
       mockOctokit.rest.repos.getContent.mockResolvedValue({
         data: {
           content: Buffer.from(yamlWithStrings).toString('base64'),
@@ -458,20 +580,20 @@ macos-latest:
 
       expect(core.warning).toHaveBeenCalledWith(
         expect.stringContaining(
-          'Skipping key "windows-latest": value is not an array'
+          'Skipping "default-runs-on.windows-latest": value is not an array'
         )
       )
       expect(core.setFailed).not.toHaveBeenCalled()
     })
 
     it('should handle YAML with array containing non-strings', async () => {
-      // FAILSAFE_SCHEMA converts most things to strings, but we can test
-      // the validation by using a YAML structure with nested objects
-      // which would fail the string check
-      const yamlWithObjects = `ubuntu-latest:
-  - verademo-java
-  - name: invalid-object
-    type: nested`
+      const yamlWithObjects = `default-runs-on:
+  ubuntu-latest:
+    - verademo-java
+    - name: invalid-object
+      type: nested
+  windows-latest:
+    - verademo-dotnet`
 
       mockOctokit.rest.repos.getContent.mockResolvedValue({
         data: {
@@ -482,26 +604,23 @@ macos-latest:
 
       await run()
 
-      // Should warn about non-string values (the nested object)
       expect(core.warning).toHaveBeenCalledWith(
         expect.stringContaining(
-          'Skipping key "ubuntu-latest": array contains non-string values'
+          'Skipping "default-runs-on.ubuntu-latest": array contains non-string values'
         )
       )
-      // Should fail because all mappings become invalid
-      expect(core.setFailed).toHaveBeenCalledWith(
-        expect.stringContaining('No valid runner mappings found')
-      )
+      // Should not fail because build-runs-on has valid mappings
+      expect(core.setFailed).not.toHaveBeenCalled()
     })
 
     it('should handle YAML with array containing mixed strings and objects', async () => {
-      // Test with some valid strings and some invalid nested structures
-      const mixedYaml = `ubuntu-latest:
-  - verademo-java
-  - nested:
-      key: value
-windows-latest:
-  - verademo-dotnet`
+      const mixedYaml = `default-runs-on:
+  ubuntu-latest:
+    - verademo-java
+    - nested:
+        key: value
+  windows-latest:
+    - verademo-dotnet`
 
       mockOctokit.rest.repos.getContent.mockResolvedValue({
         data: {
@@ -512,22 +631,24 @@ windows-latest:
 
       await run()
 
-      // Should warn about ubuntu-latest having non-string values
       expect(core.warning).toHaveBeenCalledWith(
         expect.stringContaining(
-          'Skipping key "ubuntu-latest": array contains non-string values'
+          'Skipping "default-runs-on.ubuntu-latest": array contains non-string values'
         )
       )
-      // Should still succeed because windows-latest is valid
       expect(core.setFailed).not.toHaveBeenCalled()
     })
 
     it('should handle YAML with mixed valid and invalid entries', async () => {
-      const mixedYaml = `ubuntu-latest:
-  - verademo-java
-invalid-key: 123
-windows-latest:
-  - verademo-dotnet`
+      const mixedYaml = `default-runs-on:
+  ubuntu-latest:
+    - verademo-java
+  invalid-key: 123
+  windows-latest:
+    - verademo-dotnet
+build-runs-on:
+  ubuntu-latest:
+    - verademo-java`
 
       mockOctokit.rest.repos.getContent.mockResolvedValue({
         data: {
@@ -539,7 +660,7 @@ windows-latest:
       await run()
 
       expect(core.warning).toHaveBeenCalledWith(
-        expect.stringContaining('Skipping key "invalid-key"')
+        expect.stringContaining('Skipping "default-runs-on.invalid-key"')
       )
       expect(core.setFailed).not.toHaveBeenCalled()
     })
@@ -597,8 +718,11 @@ windows-latest:
     })
 
     it('should fail when all mapping entries are invalid', async () => {
-      const allInvalidYaml = `ubuntu-latest: "not-an-array"
-windows-latest: 123`
+      const allInvalidYaml = `default-runs-on:
+  ubuntu-latest: "not-an-array"
+  windows-latest: 123
+build-runs-on:
+  self-hosted: null`
 
       mockOctokit.rest.repos.getContent.mockResolvedValue({
         data: {
@@ -610,14 +734,18 @@ windows-latest: 123`
       await run()
 
       expect(core.setFailed).toHaveBeenCalledWith(
-        expect.stringContaining('No valid runner mappings found in YAML file')
+        expect.stringContaining('No valid runner mappings found')
       )
     })
 
     it('should handle YAML with empty arrays', async () => {
-      const emptyArrayYaml = `ubuntu-latest: []
-windows-latest:
-  - verademo-dotnet`
+      const emptyArrayYaml = `default-runs-on:
+  ubuntu-latest: []
+  windows-latest:
+    - verademo-dotnet
+build-runs-on:
+  ubuntu-latest:
+    - verademo-java`
 
       mockOctokit.rest.repos.getContent.mockResolvedValue({
         data: {
@@ -633,9 +761,13 @@ windows-latest:
     })
 
     it('should handle YAML with null values', async () => {
-      const nullYaml = `ubuntu-latest:
-  - verademo-java
-windows-latest: null`
+      const nullYaml = `default-runs-on:
+  ubuntu-latest:
+    - verademo-java
+  windows-latest: null
+build-runs-on:
+  ubuntu-latest:
+    - verademo-java`
 
       mockOctokit.rest.repos.getContent.mockResolvedValue({
         data: {
@@ -647,8 +779,330 @@ windows-latest: null`
       await run()
 
       expect(core.warning).toHaveBeenCalledWith(
-        expect.stringContaining('Skipping key "windows-latest"')
+        expect.stringContaining('Skipping "default-runs-on.windows-latest"')
       )
+    })
+
+    describe('Top-Level Section Validation', () => {
+      it('should accept YAML with only build-runs-on section', async () => {
+        const yaml = `build-runs-on:
+  ubuntu-latest:
+    - verademo-java
+    - verademo-java-mitigated
+  windows-latest:
+    - verademo-dotnet`
+
+        mockOctokit.rest.repos.getContent.mockResolvedValue({
+          data: {
+            content: Buffer.from(yaml).toString('base64'),
+            size: yaml.length
+          }
+        })
+
+        setupInput({ repository: TEST_REPOS.DOTNET })
+
+        await run()
+
+        expect(core.setFailed).not.toHaveBeenCalled()
+        expect(core.setOutput).toHaveBeenCalledWith(
+          'build-runs-on',
+          "['windows-latest']"
+        )
+        // Should use default fallback for default-runs-on
+        expect(core.setOutput).toHaveBeenCalledWith(
+          'default-runs-on',
+          "['ubuntu-latest']"
+        )
+      })
+
+      it('should accept YAML with only default-runs-on section', async () => {
+        const yaml = `default-runs-on:
+  windows-latest:
+    - verademo-dotnet
+    - verademo-netframework`
+
+        mockOctokit.rest.repos.getContent.mockResolvedValue({
+          data: {
+            content: Buffer.from(yaml).toString('base64'),
+            size: yaml.length
+          }
+        })
+
+        setupInput({ repository: TEST_REPOS.DOTNET })
+
+        await run()
+
+        expect(core.setFailed).not.toHaveBeenCalled()
+        // Should use build fallback for build-runs-on
+        expect(core.setOutput).toHaveBeenCalledWith(
+          'build-runs-on',
+          "['ubuntu-latest']"
+        )
+        expect(core.setOutput).toHaveBeenCalledWith(
+          'default-runs-on',
+          "['windows-latest']"
+        )
+      })
+
+      it('should accept YAML with both build-runs-on and default-runs-on sections', async () => {
+        const yaml = `build-runs-on:
+  ubuntu-latest:
+    - verademo-java
+default-runs-on:
+  windows-latest:
+    - verademo-dotnet`
+
+        mockOctokit.rest.repos.getContent.mockResolvedValue({
+          data: {
+            content: Buffer.from(yaml).toString('base64'),
+            size: yaml.length
+          }
+        })
+
+        setupInput({ repository: TEST_REPOS.JAVA })
+
+        await run()
+
+        expect(core.setFailed).not.toHaveBeenCalled()
+        expect(core.setOutput).toHaveBeenCalledWith(
+          'build-runs-on',
+          "['ubuntu-latest']"
+        )
+        // Should use default fallback since JAVA not in default-runs-on
+        expect(core.setOutput).toHaveBeenCalledWith(
+          'default-runs-on',
+          "['ubuntu-latest']"
+        )
+      })
+
+      it('should fail when neither build-runs-on nor default-runs-on sections are present', async () => {
+        const yaml = `other-section:
+  ubuntu-latest:
+    - repo1
+random-data:
+  windows-latest:
+    - repo2`
+
+        mockOctokit.rest.repos.getContent.mockResolvedValue({
+          data: {
+            content: Buffer.from(yaml).toString('base64'),
+            size: yaml.length
+          }
+        })
+
+        await run()
+
+        expect(core.setFailed).toHaveBeenCalledWith(
+          expect.stringContaining(
+            'must contain at least one of "build-runs-on" or "default-runs-on"'
+          )
+        )
+      })
+
+      it('should fail if build-runs-on is not an object', async () => {
+        const yaml = `build-runs-on: "invalid string value"
+default-runs-on:
+  ubuntu-latest:
+    - repo1`
+
+        mockOctokit.rest.repos.getContent.mockResolvedValue({
+          data: {
+            content: Buffer.from(yaml).toString('base64'),
+            size: yaml.length
+          }
+        })
+
+        await run()
+
+        expect(core.setFailed).toHaveBeenCalledWith(
+          expect.stringContaining('"build-runs-on" must be an object')
+        )
+      })
+
+      it('should fail if default-runs-on is not an object', async () => {
+        const yaml = `default-runs-on: ["array", "not", "object"]
+build-runs-on:
+  ubuntu-latest:
+    - repo1`
+
+        mockOctokit.rest.repos.getContent.mockResolvedValue({
+          data: {
+            content: Buffer.from(yaml).toString('base64'),
+            size: yaml.length
+          }
+        })
+
+        await run()
+
+        expect(core.setFailed).toHaveBeenCalledWith(
+          expect.stringContaining('"default-runs-on" must be an object')
+        )
+      })
+
+      it('should fail if build-runs-on is null', async () => {
+        const yaml = `build-runs-on: null
+default-runs-on:
+  ubuntu-latest:
+    - repo1`
+
+        mockOctokit.rest.repos.getContent.mockResolvedValue({
+          data: {
+            content: Buffer.from(yaml).toString('base64'),
+            size: yaml.length
+          }
+        })
+
+        await run()
+
+        expect(core.setFailed).toHaveBeenCalledWith(
+          expect.stringContaining('"build-runs-on" must be an object')
+        )
+      })
+
+      it('should fail if default-runs-on is a number', async () => {
+        const yaml = `default-runs-on: 123
+build-runs-on:
+  ubuntu-latest:
+    - repo1`
+
+        mockOctokit.rest.repos.getContent.mockResolvedValue({
+          data: {
+            content: Buffer.from(yaml).toString('base64'),
+            size: yaml.length
+          }
+        })
+
+        await run()
+
+        expect(core.setFailed).toHaveBeenCalledWith(
+          expect.stringContaining('"default-runs-on" must be an object')
+        )
+      })
+
+      it('should fail when build-runs-on has no valid mappings', async () => {
+        const yaml = `build-runs-on:
+  ubuntu-latest: "not-an-array"
+  windows-latest: 123
+default-runs-on:
+  ubuntu-latest:
+    - repo1`
+
+        mockOctokit.rest.repos.getContent.mockResolvedValue({
+          data: {
+            content: Buffer.from(yaml).toString('base64'),
+            size: yaml.length
+          }
+        })
+
+        await run()
+
+        expect(core.warning).toHaveBeenCalledWith(
+          expect.stringContaining('Skipping "build-runs-on.ubuntu-latest"')
+        )
+        expect(core.warning).toHaveBeenCalledWith(
+          expect.stringContaining('Skipping "build-runs-on.windows-latest"')
+        )
+        expect(core.setFailed).toHaveBeenCalledWith(
+          expect.stringContaining(
+            'No valid runner mappings found in "build-runs-on"'
+          )
+        )
+      })
+
+      it('should fail when default-runs-on has no valid mappings', async () => {
+        const yaml = `default-runs-on:
+  ubuntu-latest: null
+  windows-latest: false
+build-runs-on:
+  ubuntu-latest:
+    - repo1`
+
+        mockOctokit.rest.repos.getContent.mockResolvedValue({
+          data: {
+            content: Buffer.from(yaml).toString('base64'),
+            size: yaml.length
+          }
+        })
+
+        await run()
+
+        expect(core.warning).toHaveBeenCalledWith(
+          expect.stringContaining('Skipping "default-runs-on.ubuntu-latest"')
+        )
+        expect(core.warning).toHaveBeenCalledWith(
+          expect.stringContaining('Skipping "default-runs-on.windows-latest"')
+        )
+        expect(core.setFailed).toHaveBeenCalledWith(
+          expect.stringContaining(
+            'No valid runner mappings found in "default-runs-on"'
+          )
+        )
+      })
+
+      it('should succeed when one section is valid even if the other has invalid entries', async () => {
+        const yaml = `build-runs-on:
+  ubuntu-latest: "invalid"
+  windows-latest: null
+default-runs-on:
+  ubuntu-latest:
+    - verademo-java
+  windows-latest:
+    - verademo-dotnet`
+
+        mockOctokit.rest.repos.getContent.mockResolvedValue({
+          data: {
+            content: Buffer.from(yaml).toString('base64'),
+            size: yaml.length
+          }
+        })
+
+        setupInput({ repository: TEST_REPOS.JAVA })
+
+        await run()
+
+        expect(core.warning).toHaveBeenCalledWith(
+          expect.stringContaining('Skipping "build-runs-on.ubuntu-latest"')
+        )
+        expect(core.setFailed).toHaveBeenCalledWith(
+          expect.stringContaining(
+            'No valid runner mappings found in "build-runs-on"'
+          )
+        )
+      })
+
+      it('should handle YAML with extra top-level keys alongside valid sections', async () => {
+        const yaml = `build-runs-on:
+  ubuntu-latest:
+    - verademo-java
+default-runs-on:
+  ubuntu-latest:
+    - verademo-java
+extra-key: "ignored"
+another-section:
+  data: value`
+
+        mockOctokit.rest.repos.getContent.mockResolvedValue({
+          data: {
+            content: Buffer.from(yaml).toString('base64'),
+            size: yaml.length
+          }
+        })
+
+        setupInput({ repository: TEST_REPOS.JAVA })
+
+        await run()
+
+        // Should succeed and ignore extra keys
+        expect(core.setFailed).not.toHaveBeenCalled()
+        expect(core.setOutput).toHaveBeenCalledWith(
+          'build-runs-on',
+          "['ubuntu-latest']"
+        )
+        expect(core.setOutput).toHaveBeenCalledWith(
+          'default-runs-on',
+          "['ubuntu-latest']"
+        )
+      })
     })
   })
 
@@ -660,11 +1114,20 @@ windows-latest: null`
 
       expect(core.info).toHaveBeenCalledWith(
         expect.stringContaining(
-          `Found repository "${TEST_REPOS.JAVA}" in runs-on group: ubuntu-latest`
+          `Found repository "${TEST_REPOS.JAVA}" in build-runs-on.ubuntu-latest`
+        )
+      )
+      expect(core.info).toHaveBeenCalledWith(
+        expect.stringContaining(
+          `Found repository "${TEST_REPOS.JAVA}" in default-runs-on.ubuntu-latest`
         )
       )
       expect(core.setOutput).toHaveBeenCalledWith(
-        'runs-on',
+        'build-runs-on',
+        "['ubuntu-latest']"
+      )
+      expect(core.setOutput).toHaveBeenCalledWith(
+        'default-runs-on',
         "['ubuntu-latest']"
       )
       expect(core.setFailed).not.toHaveBeenCalled()
@@ -677,11 +1140,20 @@ windows-latest: null`
 
       expect(core.info).toHaveBeenCalledWith(
         expect.stringContaining(
-          `Found repository "${TEST_REPOS.DOTNET}" in runs-on group: windows-latest`
+          `Found repository "${TEST_REPOS.DOTNET}" in build-runs-on.windows-latest`
+        )
+      )
+      expect(core.info).toHaveBeenCalledWith(
+        expect.stringContaining(
+          `Found repository "${TEST_REPOS.DOTNET}" in default-runs-on.windows-latest`
         )
       )
       expect(core.setOutput).toHaveBeenCalledWith(
-        'runs-on',
+        'build-runs-on',
+        "['windows-latest']"
+      )
+      expect(core.setOutput).toHaveBeenCalledWith(
+        'default-runs-on',
         "['windows-latest']"
       )
     })
@@ -693,14 +1165,28 @@ windows-latest: null`
 
       expect(core.info).toHaveBeenCalledWith(
         expect.stringContaining(
-          `Found repository "${TEST_REPOS.JAVA_MITIGATED}" in runs-on group: ubuntu-latest`
+          `Found repository "${TEST_REPOS.JAVA_MITIGATED}" in build-runs-on.ubuntu-latest`
         )
+      )
+      expect(core.info).toHaveBeenCalledWith(
+        expect.stringContaining(
+          `Found repository "${TEST_REPOS.JAVA_MITIGATED}" in default-runs-on.ubuntu-latest`
+        )
+      )
+      expect(core.setOutput).toHaveBeenCalledWith(
+        'build-runs-on',
+        "['ubuntu-latest']"
+      )
+      expect(core.setOutput).toHaveBeenCalledWith(
+        'default-runs-on',
+        "['ubuntu-latest']"
       )
     })
 
     it('should use default runner for unmatched repository', async () => {
       setupInput({
         repository: TEST_REPOS.NONEXISTENT,
+        'build-runs-on': "[ 'ubuntu-latest' ]",
         'default-runs-on': "[ 'ubuntu-latest' ]"
       })
 
@@ -708,11 +1194,20 @@ windows-latest: null`
 
       expect(core.info).toHaveBeenCalledWith(
         expect.stringContaining(
-          `Repository "${TEST_REPOS.NONEXISTENT}" not found in mapping, using default: ubuntu-latest`
+          `Repository "${TEST_REPOS.NONEXISTENT}" not found in build-runs-on, using default: ubuntu-latest`
+        )
+      )
+      expect(core.info).toHaveBeenCalledWith(
+        expect.stringContaining(
+          `Repository "${TEST_REPOS.NONEXISTENT}" not found in default-runs-on, using default: ubuntu-latest`
         )
       )
       expect(core.setOutput).toHaveBeenCalledWith(
-        'runs-on',
+        'build-runs-on',
+        "['ubuntu-latest']"
+      )
+      expect(core.setOutput).toHaveBeenCalledWith(
+        'default-runs-on',
         "['ubuntu-latest']"
       )
       expect(core.setFailed).not.toHaveBeenCalled()
@@ -720,9 +1215,14 @@ windows-latest: null`
 
     it('should handle repository with special characters', async () => {
       const specialRepo = 'repo-with-dashes_and_underscores.test'
-      const yamlWithSpecialRepo = `ubuntu-latest:
-  - ${specialRepo}
-  - another-repo`
+      const yamlWithSpecialRepo = `build-runs-on:
+  ubuntu-latest:
+    - ${specialRepo}
+    - another-repo
+default-runs-on:
+  ubuntu-latest:
+    - ${specialRepo}
+    - another-repo`
 
       mockOctokit.rest.repos.getContent.mockResolvedValue({
         data: {
@@ -738,6 +1238,14 @@ windows-latest: null`
       expect(core.info).toHaveBeenCalledWith(
         expect.stringContaining(`Found repository "${specialRepo}"`)
       )
+      expect(core.setOutput).toHaveBeenCalledWith(
+        'build-runs-on',
+        "['ubuntu-latest']"
+      )
+      expect(core.setOutput).toHaveBeenCalledWith(
+        'default-runs-on',
+        "['ubuntu-latest']"
+      )
       expect(core.setFailed).not.toHaveBeenCalled()
     })
 
@@ -748,7 +1256,10 @@ windows-latest: null`
 
       // Should not match because it's case-sensitive
       expect(core.info).toHaveBeenCalledWith(
-        expect.stringContaining('not found in mapping, using default')
+        expect.stringContaining('not found in build-runs-on, using default')
+      )
+      expect(core.info).toHaveBeenCalledWith(
+        expect.stringContaining('not found in default-runs-on, using default')
       )
     })
 
@@ -759,15 +1270,24 @@ windows-latest: null`
 
       // Should not match 'verademo-java'
       expect(core.info).toHaveBeenCalledWith(
-        expect.stringContaining('not found in mapping, using default')
+        expect.stringContaining('not found in build-runs-on, using default')
+      )
+      expect(core.info).toHaveBeenCalledWith(
+        expect.stringContaining('not found in default-runs-on, using default')
       )
     })
 
     it('should stop at first match when repository appears in multiple groups', async () => {
-      const duplicateYaml = `ubuntu-latest:
-  - verademo-java
-windows-latest:
-  - verademo-java`
+      const duplicateYaml = `build-runs-on:
+  ubuntu-latest:
+    - verademo-java
+  windows-latest:
+    - verademo-java
+default-runs-on:
+  ubuntu-latest:
+    - verademo-java
+  windows-latest:
+    - verademo-java`
 
       mockOctokit.rest.repos.getContent.mockResolvedValue({
         data: {
@@ -780,9 +1300,13 @@ windows-latest:
 
       await run()
 
-      // Should use the first match
+      // Should use the first match in each section
       expect(core.setOutput).toHaveBeenCalledWith(
-        'runs-on',
+        'build-runs-on',
+        "['ubuntu-latest']"
+      )
+      expect(core.setOutput).toHaveBeenCalledWith(
+        'default-runs-on',
         "['ubuntu-latest']"
       )
     })
@@ -795,7 +1319,11 @@ windows-latest:
       await run()
 
       expect(core.setOutput).toHaveBeenCalledWith(
-        'runs-on',
+        'build-runs-on',
+        "['ubuntu-latest']"
+      )
+      expect(core.setOutput).toHaveBeenCalledWith(
+        'default-runs-on',
         "['ubuntu-latest']"
       )
     })
@@ -803,21 +1331,30 @@ windows-latest:
     it('should set correct output format for default runner', async () => {
       setupInput({
         repository: TEST_REPOS.NONEXISTENT,
+        'build-runs-on': "[ 'windows-latest' ]",
         'default-runs-on': "[ 'windows-latest' ]"
       })
 
       await run()
 
       expect(core.setOutput).toHaveBeenCalledWith(
-        'runs-on',
+        'build-runs-on',
+        "['windows-latest']"
+      )
+      expect(core.setOutput).toHaveBeenCalledWith(
+        'default-runs-on',
         "['windows-latest']"
       )
     })
 
     it('should preserve runner name exactly as specified in YAML', async () => {
       const customRunner = 'self-hosted-runner-123'
-      const yamlWithCustomRunner = `${customRunner}:
-  - verademo-java`
+      const yamlWithCustomRunner = `build-runs-on:
+  ${customRunner}:
+    - verademo-java
+default-runs-on:
+  ${customRunner}:
+    - verademo-java`
 
       mockOctokit.rest.repos.getContent.mockResolvedValue({
         data: {
@@ -831,14 +1368,22 @@ windows-latest:
       await run()
 
       expect(core.setOutput).toHaveBeenCalledWith(
-        'runs-on',
+        'build-runs-on',
+        `['${customRunner}']`
+      )
+      expect(core.setOutput).toHaveBeenCalledWith(
+        'default-runs-on',
         `['${customRunner}']`
       )
     })
 
     it('should output self-hosted runner format', async () => {
-      const selfHostedYaml = `self-hosted:
-  - verademo-java`
+      const selfHostedYaml = `build-runs-on:
+  self-hosted:
+    - verademo-java
+default-runs-on:
+  self-hosted:
+    - verademo-java`
 
       mockOctokit.rest.repos.getContent.mockResolvedValue({
         data: {
@@ -851,7 +1396,14 @@ windows-latest:
 
       await run()
 
-      expect(core.setOutput).toHaveBeenCalledWith('runs-on', "['self-hosted']")
+      expect(core.setOutput).toHaveBeenCalledWith(
+        'build-runs-on',
+        "['self-hosted']"
+      )
+      expect(core.setOutput).toHaveBeenCalledWith(
+        'default-runs-on',
+        "['self-hosted']"
+      )
     })
   })
 
@@ -896,26 +1448,38 @@ windows-latest:
       // Verify all steps executed
       expect(mockOctokit.rest.rateLimit.get).toHaveBeenCalled()
       expect(mockOctokit.rest.repos.getContent).toHaveBeenCalled()
-      expect(core.setOutput).toHaveBeenCalled()
+      expect(core.setOutput).toHaveBeenCalledWith(
+        'build-runs-on',
+        expect.stringContaining('ubuntu-latest')
+      )
+      expect(core.setOutput).toHaveBeenCalledWith(
+        'default-runs-on',
+        expect.stringContaining('ubuntu-latest')
+      )
       expect(core.setFailed).not.toHaveBeenCalled()
     })
 
     it('should handle complex YAML with multiple runners', async () => {
-      const complexYaml = `ubuntu-latest:
-  - verademo-java
-  - verademo-java-mitigated
-  - java-project-1
-  - java-project-2
-windows-latest:
-  - verademo-dotnet
-  - verademo-netframework
-  - dotnet-project-1
-macos-latest:
-  - ios-app
-  - swift-project
-self-hosted:
-  - enterprise-app-1
-  - enterprise-app-2`
+      const complexYaml = `build-runs-on:
+  ubuntu-latest:
+    - verademo-java
+    - verademo-java-mitigated
+    - java-project-1
+    - java-project-2
+  windows-latest:
+    - verademo-dotnet
+    - verademo-netframework
+    - dotnet-project-1
+default-runs-on:
+  ubuntu-latest:
+    - verademo-java
+    - verademo-java-mitigated
+    - java-project-1
+    - java-project-2
+  windows-latest:
+    - verademo-dotnet
+    - verademo-netframework
+    - dotnet-project-1`
 
       mockOctokit.rest.repos.getContent.mockResolvedValue({
         data: {
@@ -932,7 +1496,11 @@ self-hosted:
         expect.stringContaining('Found repository "java-project-2"')
       )
       expect(core.setOutput).toHaveBeenCalledWith(
-        'runs-on',
+        'build-runs-on',
+        "['ubuntu-latest']"
+      )
+      expect(core.setOutput).toHaveBeenCalledWith(
+        'default-runs-on',
         "['ubuntu-latest']"
       )
     })
@@ -949,6 +1517,14 @@ self-hosted:
       expect(core.info).toHaveBeenCalledWith(
         expect.stringContaining(`(ref: ${customRef})`)
       )
+      expect(core.setOutput).toHaveBeenCalledWith(
+        'build-runs-on',
+        "['ubuntu-latest']"
+      )
+      expect(core.setOutput).toHaveBeenCalledWith(
+        'default-runs-on',
+        "['ubuntu-latest']"
+      )
       expect(core.setFailed).not.toHaveBeenCalled()
     })
 
@@ -961,19 +1537,30 @@ self-hosted:
         expect.stringContaining(`Found repository "${TEST_REPOS.DOTNET}"`)
       )
       expect(core.setOutput).toHaveBeenCalledWith(
-        'runs-on',
+        'build-runs-on',
+        "['windows-latest']"
+      )
+      expect(core.setOutput).toHaveBeenCalledWith(
+        'default-runs-on',
         "['windows-latest']"
       )
     })
 
     it('should handle large YAML files', async () => {
       // Create a large YAML with many repositories
-      const runners = ['ubuntu-latest', 'windows-latest', 'macos-latest']
-      let largeYaml = ''
+      const runners = ['ubuntu-latest', 'windows-latest']
+      let largeYaml = 'build-runs-on:\n'
       runners.forEach((runner, idx) => {
-        largeYaml += `${runner}:\n`
+        largeYaml += `  ${runner}:\n`
         for (let i = 0; i < 100; i++) {
-          largeYaml += `  - repo-${idx}-${i}\n`
+          largeYaml += `    - repo-${idx}-${i}\n`
+        }
+      })
+      largeYaml += 'default-runs-on:\n'
+      runners.forEach((runner, idx) => {
+        largeYaml += `  ${runner}:\n`
+        for (let i = 0; i < 100; i++) {
+          largeYaml += `    - repo-${idx}-${i}\n`
         }
       })
 
@@ -989,7 +1576,11 @@ self-hosted:
       await run()
 
       expect(core.setOutput).toHaveBeenCalledWith(
-        'runs-on',
+        'build-runs-on',
+        "['windows-latest']"
+      )
+      expect(core.setOutput).toHaveBeenCalledWith(
+        'default-runs-on',
         "['windows-latest']"
       )
     })
@@ -1002,7 +1593,10 @@ self-hosted:
       await run()
 
       expect(core.info).toHaveBeenCalledWith(
-        expect.stringContaining('not found in mapping, using default')
+        expect.stringContaining('not found in build-runs-on, using default')
+      )
+      expect(core.info).toHaveBeenCalledWith(
+        expect.stringContaining('not found in default-runs-on, using default')
       )
     })
 
@@ -1013,7 +1607,10 @@ self-hosted:
 
       // Should not match due to whitespace
       expect(core.info).toHaveBeenCalledWith(
-        expect.stringContaining('not found in mapping, using default')
+        expect.stringContaining('not found in build-runs-on, using default')
+      )
+      expect(core.info).toHaveBeenCalledWith(
+        expect.stringContaining('not found in default-runs-on, using default')
       )
     })
 
@@ -1024,12 +1621,25 @@ self-hosted:
       await run()
 
       expect(core.setFailed).not.toHaveBeenCalled()
+      expect(core.setOutput).toHaveBeenCalledWith(
+        'build-runs-on',
+        "['ubuntu-latest']"
+      )
+      expect(core.setOutput).toHaveBeenCalledWith(
+        'default-runs-on',
+        "['ubuntu-latest']"
+      )
     })
 
     it('should handle YAML with Unicode characters', async () => {
-      const unicodeYaml = `ubuntu-latest:
-  - 项目-中文
-  - verademo-java`
+      const unicodeYaml = `build-runs-on:
+  ubuntu-latest:
+    - 项目-中文
+    - verademo-java
+default-runs-on:
+  ubuntu-latest:
+    - 项目-中文
+    - verademo-java`
 
       mockOctokit.rest.repos.getContent.mockResolvedValue({
         data: {
@@ -1045,11 +1655,23 @@ self-hosted:
       expect(core.info).toHaveBeenCalledWith(
         expect.stringContaining('Found repository "项目-中文"')
       )
+      expect(core.setOutput).toHaveBeenCalledWith(
+        'build-runs-on',
+        "['ubuntu-latest']"
+      )
+      expect(core.setOutput).toHaveBeenCalledWith(
+        'default-runs-on',
+        "['ubuntu-latest']"
+      )
     })
 
     it('should handle runner names with special characters', async () => {
-      const specialRunnerYaml = `ubuntu-22.04-arm64:
-  - verademo-java`
+      const specialRunnerYaml = `build-runs-on:
+  ubuntu-22.04-arm64:
+    - verademo-java
+default-runs-on:
+  ubuntu-22.04-arm64:
+    - verademo-java`
 
       mockOctokit.rest.repos.getContent.mockResolvedValue({
         data: {
@@ -1063,7 +1685,11 @@ self-hosted:
       await run()
 
       expect(core.setOutput).toHaveBeenCalledWith(
-        'runs-on',
+        'build-runs-on',
+        "['ubuntu-22.04-arm64']"
+      )
+      expect(core.setOutput).toHaveBeenCalledWith(
+        'default-runs-on',
         "['ubuntu-22.04-arm64']"
       )
     })

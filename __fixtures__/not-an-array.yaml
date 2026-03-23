@@ -1,4 +1,0 @@
-windows-latest:
-  name: test
-ubuntu-latest:
-  - test

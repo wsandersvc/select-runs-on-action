@@ -1,5 +1,0 @@
-ubuntu-latest:
-  - repo1
-windows-latest
-  missing-colon-here
-    - repo2

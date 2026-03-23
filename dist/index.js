@@ -64676,7 +64676,7 @@ var jsYaml = {
  * parseDefaultRunsOn("[ 'ubuntu-latest' ]")  // Returns: "ubuntu-latest"
  * parseDefaultRunsOn("[ 'windows-latest' ]") // Returns: "windows-latest"
  */
-function parseDefaultRunsOn(input) {
+function parseRunsOn(input) {
     try {
         // Add comment explaining why this is needed
         // GitHub Actions passes arrays with single quotes, e.g., "[ 'ubuntu-latest' ]"
@@ -64692,7 +64692,7 @@ function parseDefaultRunsOn(input) {
         return parsed[0];
     }
     catch (error) {
-        throw new Error(`Invalid default-runs-on-format ${error.message}`, {
+        throw new Error(`Invalid runs-on-format ${error.message}`, {
             cause: error
         });
     }
@@ -64752,89 +64752,120 @@ async function fetchFileFromRepo(options, octokit) {
  * Validates the structure and content of the runs-on mapping YAML data.
  *
  * This function performs runtime validation of the parsed YAML data to ensure
- * it matches the expected structure (object with string array values). It gracefully
- * handles invalid entries by warning about them and continuing validation rather
- * than failing completely. This allows partial configurations to work.
+ * it matches 'build-runs-on' and 'default-runs-on'
+ * top-level keys, each containing runner mappings. It gracefully handles invalid
+ * entries by warning about them and continuing validation.
  *
  * @param data - Parsed YAML data of unknown type (for safety)
- * @returns Validated mapping object containing only valid entries
- * @throws {Error} If data is not an object, or if no valid mappings are found after validation
+ * @returns Validated mapping object with optional build-runs-on and default-runs-on sections
+ * @throws {Error} If data structure is invalid
  *
  * @example
  * const mapping = validateMapping({
- *   'ubuntu-latest': ['repo1', 'repo2'],
- *   'windows-latest': ['repo3']
+ *   'build-runs-on': {
+ *     'ubuntu-latest': ['repo1', 'repo2'],
+ *     'windows-latest': ['repo3']
+ *   },
+ *   'default-runs-on': {
+ *     'ubuntu-latest': ['repo4'],
+ *     'macos-latest': ['repo5']
+ *   }
  * })
- * // Returns: { 'ubuntu-latest': ['repo1', 'repo2'], 'windows-latest': ['repo3'] }
  *
  * @example
- * // With invalid entries (logs warnings but continues)
+ * // Only default-runs-on specified
  * const mapping = validateMapping({
- *   'ubuntu-latest': ['repo1'],
- *   'invalid-key': 'not-an-array'  // Skipped with warning
+ *   'default-runs-on': {
+ *     'ubuntu-latest': ['repo1']
+ *   }
  * })
- * // Returns: { 'ubuntu-latest': ['repo1'] }
  */
 function validateMapping(data) {
     if (typeof data !== 'object' || data === null || Array.isArray(data)) {
         throw new Error('Mapping YAML must be an object');
     }
+    const dataObj = data;
+    const result = {};
+    // Validate build-runs-on if present
+    if ('build-runs-on' in dataObj) {
+        result['build-runs-on'] = validateRunnerMapping(dataObj['build-runs-on'], 'build-runs-on');
+    }
+    // Validate default-runs-on if present
+    if ('default-runs-on' in dataObj) {
+        result['default-runs-on'] = validateRunnerMapping(dataObj['default-runs-on'], 'default-runs-on');
+    }
+    // At least one section must be present
+    if (!result['build-runs-on'] && !result['default-runs-on']) {
+        throw new Error('Mapping YAML must contain at least one of "build-runs-on" or "default-runs-on"');
+    }
+    return result;
+}
+/**
+ * Validates a runner mapping section (helper for validateMapping).
+ *
+ * @param data - Data to validate as a runner mapping
+ * @param sectionName - Name of the section for error messages
+ * @returns Validated runner mapping
+ * @throws {Error} If data structure is invalid or no valid mappings found
+ */
+function validateRunnerMapping(data, sectionName) {
+    if (typeof data !== 'object' || data === null || Array.isArray(data)) {
+        throw new Error(`"${sectionName}" must be an object`);
+    }
     const validated = {};
     for (const [key, value] of Object.entries(data)) {
         if (!Array.isArray(value)) {
-            warning(`Skipping key "${key}": value is not an array`);
+            warning(`Skipping "${sectionName}.${key}": value is not an array`);
             continue;
         }
         if (!value.every((item) => typeof item === 'string')) {
-            warning(`Skipping key "${key}": array contains non-string values`);
+            warning(`Skipping "${sectionName}.${key}": array contains non-string values`);
             continue;
         }
         validated[key] = value;
     }
     if (Object.keys(validated).length === 0) {
-        throw new Error('No valid runner mappings found in YAML file');
+        throw new Error(`No valid runner mappings found in "${sectionName}"`);
     }
     return validated;
 }
 /**
  * Selects the appropriate runner for a repository based on the mapping configuration.
  *
- * This function searches through the validated mapping to find which runner group
+ * This function searches through a runner mapping to find which runner group
  * contains the specified repository. If found, it returns that runner name.
  * If not found in any group, it falls back to the default runner.
  *
- * The function stops at the first match, so if a repository appears in multiple
- * runner groups, the first one encountered will be used.
- *
- * @param mapping - Validated runs-on mapping object (runner names to repository lists)
+ * @param mapping - Runner mapping object (runner names to repository lists)
  * @param repository - Name of the repository to find a runner for
- * @param defaultRunner - Fallback runner name to use if repository is not found in any group
+ * @param defaultRunner - Fallback runner name to use if repository is not found
+ * @param sectionName - Name of section for logging (e.g., 'build-runs-on')
  * @returns The selected runner name (either matched or default)
  *
  * @example
  * const runner = selectRunner(
  *   { 'ubuntu-latest': ['repo1', 'repo2'], 'windows-latest': ['repo3'] },
  *   'repo2',
- *   'ubuntu-latest'
+ *   'ubuntu-latest',
+ *   'build-runs-on'
  * )
  * // Returns: 'ubuntu-latest' (found in mapping)
- *
- * @example
- * const runner = selectRunner(
- *   { 'ubuntu-latest': ['repo1'] },
- *   'unknown-repo',
- *   'macos-latest'
- * )
- * // Returns: 'macos-latest' (not found, uses default)
  */
-function selectRunner(mapping, repository, defaultRunner) {
+function selectRunner(mapping, repository, defaultRunner, sectionName) {
+    // If no mapping provided, use default
+    if (!mapping) {
+        info(`No "${sectionName}" mapping provided, using default: ${defaultRunner}`);
+        return defaultRunner;
+    }
+    // Search for repository in mapping
     for (const [runnerName, repositories] of Object.entries(mapping)) {
         if (repositories.includes(repository)) {
-            info(`Found repository "${repository}" in runs-on group: ${runnerName}`);
+            info(`Found repository "${repository}" in ${sectionName}.${runnerName}`);
             return runnerName;
         }
     }
-    info(`Repository "${repository}" not found in mapping, using default: ${defaultRunner}`);
+    // Not found, use default
+    info(`Repository "${repository}" not found in ${sectionName}, using default: ${defaultRunner}`);
     return defaultRunner;
 }
 /**
@@ -64845,6 +64876,7 @@ function selectRunner(mapping, repository, defaultRunner) {
 async function run() {
     try {
         const inputs = {
+            buildRunsOn: getInput('build-runs-on', { required: true }),
             configRepository: getInput('config-repository', {
                 required: false
             }),
@@ -64856,7 +64888,9 @@ async function run() {
             repository: getInput('repository', { required: true })
         };
         const octokit = getOctokit(inputs.githubToken);
-        const defaultRunner = parseDefaultRunsOn(inputs.defaultRunsOn);
+        // Parse both runner inputs
+        const defaultRunnerFallback = parseRunsOn(inputs.defaultRunsOn);
+        const buildRunnerFallback = parseRunsOn(inputs.buildRunsOn);
         info(`Loading runs-on-mapping-yaml from ${inputs.owner}/${inputs.configRepository}/${inputs.mappingPath}${inputs.ref ? ` (ref: ${inputs.ref})` : ''}`);
         const fileContent = await fetchFileFromRepo({
             owner: inputs.owner,
@@ -64867,9 +64901,14 @@ async function run() {
         const rawMapping = jsYaml.load(fileContent, { schema: FAILSAFE_SCHEMA });
         const mapping = validateMapping(rawMapping);
         debug(JSON.stringify(mapping, null, 2));
-        const selectedRunner = selectRunner(mapping, inputs.repository, defaultRunner);
-        info(`Using runs-on value: ${selectedRunner}`);
-        setOutput('runs-on', `['${selectedRunner}']`);
+        // Select runners for both sections
+        const defaultRunner = selectRunner(mapping['default-runs-on'], inputs.repository, defaultRunnerFallback, 'default-runs-on');
+        const buildRunner = selectRunner(mapping['build-runs-on'], inputs.repository, buildRunnerFallback, 'build-runs-on');
+        // Set both outputs
+        info(`Using default-runs-on value: ${defaultRunner}`);
+        setOutput('default-runs-on', `['${defaultRunner}']`);
+        info(`Using build-runs-on value: ${buildRunner}`);
+        setOutput('build-runs-on', `['${buildRunner}']`);
     }
     catch (error) {
         setFailed(error.message);
