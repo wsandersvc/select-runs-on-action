@@ -1,7 +1,16 @@
-ubuntu-latest:
-  - verademo-java
-  - verademo-java-mitigated
+default-runs-on:
+  ubuntu-latest:
+    - verademo-java
+    - verademo-java-mitigated
 
-windows-latest:
-  - verademo-dotnet
-  - verademo-netframework
+  windows-latest:
+    - verademo-dotnet
+    - verademo-netframework
+build-runs-on:
+  ubuntu-latest:
+    - verademo-java
+    - verademo-java-mitigated
+
+  windows-latest:
+    - verademo-dotnet
+    - verademo-netframework

@@ -4,11 +4,31 @@ import yaml, { FAILSAFE_SCHEMA } from 'js-yaml'
 
 type Octokit = ReturnType<typeof getOctokit>
 
-interface RunsOnMapping {
+interface RunnerMapping {
   [runnerName: string]: string[]
 }
 
-function parseDefaultRunsOn(input: string): string {
+interface RunsOnMapping {
+  'build-runs-on'?: RunnerMapping
+  'default-runs-on'?: RunnerMapping
+}
+
+/**
+ * Parses the GitHub Actions default-runs-on input format.
+ *
+ * GitHub Actions passes runner arrays with single quotes (e.g., "[ 'ubuntu-latest' ]")
+ * which is not valid JSON. This function normalizes the format by replacing single
+ * quotes with double quotes and validates that the input contains exactly one runner.
+ *
+ * @param input - String in the format "[ 'runner-name' ]" with single quotes
+ * @returns The runner name extracted from the array as a string
+ * @throws {Error} If the format is invalid, not an array, doesn't contain exactly 1 element, or element is not a string
+ *
+ * @example
+ * parseDefaultRunsOn("[ 'ubuntu-latest' ]")  // Returns: "ubuntu-latest"
+ * parseDefaultRunsOn("[ 'windows-latest' ]") // Returns: "windows-latest"
+ */
+function parseRunsOn(input: string): string {
   try {
     // Add comment explaining why this is needed
     // GitHub Actions passes arrays with single quotes, e.g., "[ 'ubuntu-latest' ]"
@@ -26,15 +46,34 @@ function parseDefaultRunsOn(input: string): string {
 
     return parsed[0]
   } catch (error) {
-    throw new Error(
-      `Invalid default-runs-on-format ${(error as Error).message}`,
-      {
-        cause: error
-      }
-    )
+    throw new Error(`Invalid runs-on-format ${(error as Error).message}`, {
+      cause: error
+    })
   }
 }
 
+/**
+ * Fetches a file from a GitHub repository using the GitHub API.
+ *
+ * This function retrieves file content from a specified repository and path,
+ * validates that the path points to a file (not a directory), checks rate limits,
+ * and decodes the base64-encoded content returned by the GitHub API.
+ *
+ * @param options - Configuration object containing repository details
+ * @param options.owner - GitHub repository owner (username or organization)
+ * @param options.repository - GitHub repository name where the file is located
+ * @param options.path - Path to the file within the repository
+ * @param options.ref - Optional git reference (branch, tag, or commit SHA). If not provided, uses default branch
+ * @param octokit - Authenticated Octokit instance for making GitHub API calls
+ * @returns Promise that resolves to the decoded file content as a UTF-8 string
+ * @throws {Error} If the file cannot be fetched, the path is a directory, or API call fails
+ *
+ * @example
+ * const content = await fetchFileFromRepo(
+ *   { owner: 'myorg', repository: 'config', path: 'runners.yaml', ref: 'main' },
+ *   octokit
+ * )
+ */
 async function fetchFileFromRepo(
   options: {
     owner: string
@@ -90,20 +129,99 @@ async function fetchFileFromRepo(
   }
 }
 
+/**
+ * Validates the structure and content of the runs-on mapping YAML data.
+ *
+ * This function performs runtime validation of the parsed YAML data to ensure
+ * it matches 'build-runs-on' and 'default-runs-on'
+ * top-level keys, each containing runner mappings. It gracefully handles invalid
+ * entries by warning about them and continuing validation.
+ *
+ * @param data - Parsed YAML data of unknown type (for safety)
+ * @returns Validated mapping object with optional build-runs-on and default-runs-on sections
+ * @throws {Error} If data structure is invalid
+ *
+ * @example
+ * const mapping = validateMapping({
+ *   'build-runs-on': {
+ *     'ubuntu-latest': ['repo1', 'repo2'],
+ *     'windows-latest': ['repo3']
+ *   },
+ *   'default-runs-on': {
+ *     'ubuntu-latest': ['repo4'],
+ *     'macos-latest': ['repo5']
+ *   }
+ * })
+ *
+ * @example
+ * // Only default-runs-on specified
+ * const mapping = validateMapping({
+ *   'default-runs-on': {
+ *     'ubuntu-latest': ['repo1']
+ *   }
+ * })
+ */
 function validateMapping(data: unknown): RunsOnMapping {
   if (typeof data !== 'object' || data === null || Array.isArray(data)) {
     throw new Error('Mapping YAML must be an object')
   }
 
-  const validated: RunsOnMapping = {}
+  const dataObj = data as Record<string, unknown>
+  const result: RunsOnMapping = {}
+
+  // Validate build-runs-on if present
+  if ('build-runs-on' in dataObj) {
+    result['build-runs-on'] = validateRunnerMapping(
+      dataObj['build-runs-on'],
+      'build-runs-on'
+    )
+  }
+
+  // Validate default-runs-on if present
+  if ('default-runs-on' in dataObj) {
+    result['default-runs-on'] = validateRunnerMapping(
+      dataObj['default-runs-on'],
+      'default-runs-on'
+    )
+  }
+
+  // At least one section must be present
+  if (!result['build-runs-on'] && !result['default-runs-on']) {
+    throw new Error(
+      'Mapping YAML must contain at least one of "build-runs-on" or "default-runs-on"'
+    )
+  }
+
+  return result
+}
+
+/**
+ * Validates a runner mapping section (helper for validateMapping).
+ *
+ * @param data - Data to validate as a runner mapping
+ * @param sectionName - Name of the section for error messages
+ * @returns Validated runner mapping
+ * @throws {Error} If data structure is invalid or no valid mappings found
+ */
+function validateRunnerMapping(
+  data: unknown,
+  sectionName: string
+): RunnerMapping {
+  if (typeof data !== 'object' || data === null || Array.isArray(data)) {
+    throw new Error(`"${sectionName}" must be an object`)
+  }
+
+  const validated: RunnerMapping = {}
   for (const [key, value] of Object.entries(data)) {
     if (!Array.isArray(value)) {
-      core.warning(`Skipping key "${key}": value is not an array`)
+      core.warning(`Skipping "${sectionName}.${key}": value is not an array`)
       continue
     }
 
     if (!value.every((item) => typeof item === 'string')) {
-      core.warning(`Skipping key "${key}": array contains non-string values`)
+      core.warning(
+        `Skipping "${sectionName}.${key}": array contains non-string values`
+      )
       continue
     }
 
@@ -111,26 +229,61 @@ function validateMapping(data: unknown): RunsOnMapping {
   }
 
   if (Object.keys(validated).length === 0) {
-    throw new Error('No valid runner mappings found in YAML file')
+    throw new Error(`No valid runner mappings found in "${sectionName}"`)
   }
+
   return validated
 }
 
+/**
+ * Selects the appropriate runner for a repository based on the mapping configuration.
+ *
+ * This function searches through a runner mapping to find which runner group
+ * contains the specified repository. If found, it returns that runner name.
+ * If not found in any group, it falls back to the default runner.
+ *
+ * @param mapping - Runner mapping object (runner names to repository lists)
+ * @param repository - Name of the repository to find a runner for
+ * @param defaultRunner - Fallback runner name to use if repository is not found
+ * @param sectionName - Name of section for logging (e.g., 'build-runs-on')
+ * @returns The selected runner name (either matched or default)
+ *
+ * @example
+ * const runner = selectRunner(
+ *   { 'ubuntu-latest': ['repo1', 'repo2'], 'windows-latest': ['repo3'] },
+ *   'repo2',
+ *   'ubuntu-latest',
+ *   'build-runs-on'
+ * )
+ * // Returns: 'ubuntu-latest' (found in mapping)
+ */
 function selectRunner(
-  mapping: RunsOnMapping,
+  mapping: RunnerMapping | undefined,
   repository: string,
-  defaultRunner: string
+  defaultRunner: string,
+  sectionName: string
 ): string {
+  // If no mapping provided, use default
+  if (!mapping) {
+    core.info(
+      `No "${sectionName}" mapping provided, using default: ${defaultRunner}`
+    )
+    return defaultRunner
+  }
+
+  // Search for repository in mapping
   for (const [runnerName, repositories] of Object.entries(mapping)) {
     if (repositories.includes(repository)) {
       core.info(
-        `Found repository "${repository}" in runs-on group: ${runnerName}`
+        `Found repository "${repository}" in ${sectionName}.${runnerName}`
       )
       return runnerName
     }
   }
+
+  // Not found, use default
   core.info(
-    `Repository "${repository}" not found in mapping, using default: ${defaultRunner}`
+    `Repository "${repository}" not found in ${sectionName}, using default: ${defaultRunner}`
   )
   return defaultRunner
 }
@@ -143,6 +296,7 @@ function selectRunner(
 export async function run(): Promise<void> {
   try {
     const inputs = {
+      buildRunsOn: core.getInput('build-runs-on', { required: true }),
       configRepository: core.getInput('config-repository', {
         required: false
       }),
@@ -156,7 +310,9 @@ export async function run(): Promise<void> {
 
     const octokit = getOctokit(inputs.githubToken)
 
-    const defaultRunner = parseDefaultRunsOn(inputs.defaultRunsOn)
+    // Parse both runner inputs
+    const defaultRunnerFallback = parseRunsOn(inputs.defaultRunsOn)
+    const buildRunnerFallback = parseRunsOn(inputs.buildRunsOn)
 
     core.info(
       `Loading runs-on-mapping-yaml from ${inputs.owner}/${inputs.configRepository}/${inputs.mappingPath}${inputs.ref ? ` (ref: ${inputs.ref})` : ''}`
@@ -175,14 +331,27 @@ export async function run(): Promise<void> {
     const mapping = validateMapping(rawMapping)
     core.debug(JSON.stringify(mapping, null, 2))
 
-    const selectedRunner = selectRunner(
-      mapping,
+    // Select runners for both sections
+    const defaultRunner = selectRunner(
+      mapping['default-runs-on'],
       inputs.repository,
-      defaultRunner
+      defaultRunnerFallback,
+      'default-runs-on'
     )
 
-    core.info(`Using runs-on value: ${selectedRunner}`)
-    core.setOutput('runs-on', `['${selectedRunner}']`)
+    const buildRunner = selectRunner(
+      mapping['build-runs-on'],
+      inputs.repository,
+      buildRunnerFallback,
+      'build-runs-on'
+    )
+
+    // Set both outputs
+    core.info(`Using default-runs-on value: ${defaultRunner}`)
+    core.setOutput('default-runs-on', `['${defaultRunner}']`)
+
+    core.info(`Using build-runs-on value: ${buildRunner}`)
+    core.setOutput('build-runs-on', `['${buildRunner}']`)
   } catch (error) {
     core.setFailed((error as Error).message)
   }

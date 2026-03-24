@@ -87,3 +87,54 @@ location.
 with:
   config-repository: my-custom-repository
 ```
+
+## Troubleshooting
+
+### Debugging Tips
+
+1. **Enable Debug Logging**
+
+```yaml
+# In your repository settings
+Secrets → Actions → Add secret
+Name: ACTIONS_STEP_DEBUG
+Value: true
+```
+
+1. **Check Action Logs**
+
+- Look for info messages about which repository was found/not found
+- Check for warnings about skipped YAML entries
+- Review error messages for specific failure reasons
+
+1. **Validate YAML File Locally**
+
+```bash
+# Check YAML syntax
+yamllint runs-on-mapping.yaml
+
+# Or use Python
+python -c "import yaml; yaml.safe_load(open('runs-on-mapping.yaml'))"
+```
+
+1. **Test with Simple Configuration**
+
+```yaml
+# Minimal test configuration
+ubuntu-latest:
+  - test-repo
+```
+
+### Getting Help
+
+If you encounter issues not covered here:
+
+Check the
+[GitHub Issues](https://github.com/wsandersvc/select-runs-on-action/issues) for
+similar problems Review the action logs for specific error messages Open a new
+issue with:
+
+- Full error message
+- Relevant action configuration (sanitized, no secrets)
+- Steps to reproduce
+- Expected vs actual behavior

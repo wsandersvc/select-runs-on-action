@@ -11,6 +11,9 @@ branding:
 
 # Define your inputs here.
 inputs:
+  build-runs-on: # formatted as [ 'ubuntu-latest' ]
+    description: Build runs_on value from veracode workflow inputs
+    required: true
   config-repository:
     description: GitHub repository name
     required: false
@@ -26,8 +29,8 @@ inputs:
     required: true
   ref:
     description:
-      Branch, tag, or commit SHA to fetch from (optional, defaults to default
-      branch)
+      Branch, tag, or commit SHA to fetch from in the config-repository
+      (optional, defaults to default branch)
     required: false
   repository:
     description: GitHub repository name
@@ -39,8 +42,10 @@ inputs:
 
 # Define your outputs here.
 outputs:
-  runs-on:
-    description: runs_on runner selection from YAML mapping file
+  build-runs-on:
+    description: Build runs_on runner selection from YAML mapping file
+  default-runs-on:
+    description: Default runs_on runner selection from YAML mapping file
 
 runs:
   using: node24
